@@ -1,8 +1,10 @@
 """AnalyticsAgentV3: minimal question-driven data preparation prototype.
 
-Run: python controller_v3_user_guidance.py
+Run: python controller.py
 Requires: OPENAI_API_KEY in .env, Docker, and divvy-analytics:latest image.
-Stages 1–5: preparation, statistics, optional charts, and interpretation.
+Workflow: human input, dataset profiling, scope assessment and approval,
+data preparation, frozen dataset, statistical analysis, optional charts,
+interpretation and reporting, and optional follow-up questions.
 """
 import csv
 import json

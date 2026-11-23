@@ -10,16 +10,16 @@ The project is a **working prototype, not a production-ready or fully validated 
 
 1. **Question and data:** The human supplies a research question and CSV file. The controller profiles the dataset and sends a compact profile to OpenAI.
 2. **Scope:** OpenAI assesses the scope of question; the human accepts, revises, or stops.
-3. **Data preparation:** OpenAI proposes a data preparation plan for human approval, then generates code. Docker executes the code. The controller checks row counts, exclusions, and remaining missing values against an audit. The human reviews the audit summary and accepts the prepared dataset.
+3. **Data preparation:** OpenAI proposes a data preparation plan for human approval, then generates code. The data profile sent to OpenAI includes column names, missing-value counts, and three sample rows. Docker executes the approved code. The controller checks row counts, exclusions, and remaining missing values against an audit. The human reviews the audit summary and accepts the prepared dataset. Users should avoid submitting confidential data without appropriate authorization.
 4. **Analysis:** OpenAI proposes a statistical plan for human approval, generates code, and controller runs it in Docker.
-5. **Charts and report:** For optional charts, OpenAI proposes two charts for human approval. Once approved, OpenAI generates the code, which the controller executes in Docker. OpenAI then interprets the results and produces an HTML report.
+5. **Charts and report:** For optional charts, OpenAI proposes one figure with up to two panels for human approval. Once approved, OpenAI generates the code, which the controller executes in Docker. OpenAI then interprets the results and produces an HTML report.
 6. **Follow-up:** OpenAI determines whether to REUSE, EXTEND, or RESTART the prepared dataset. The human then reviews and approves any proposed data preparation or statistical analysis plan before execution.
 
-If execution fails, the controller saves error details. The human can restart the controller and choose to resume; the saved error can inform corrected code generation.
+If execution fails, the controller saves error details. The human can restart the controller and choose to resume. During data preparation, saved verification errors inform corrected code generation; in later stages, error details are not automatically reused.
 
 The controller coordinates the workflow and approval gates. **OpenAI is the only LLM used at runtime.** Claude was used separately for independent review during development.
 
-For the design rationale, experience, and known trade-offs, see [Lessons Learned](LESSONS_LEARNED.md) (to be included in the repository).
+For the design rationale, experience, and known trade-offs, see [Lessons Learned](LESSONS_LEARNED.md).
 
 ## Requirements
 
@@ -34,9 +34,9 @@ Docker runs the generated scripts separately from the controller. The controller
 
 ## Setup and run
 
-The instructions below reflect the current controller. **The Dockerfile and final dependency list still need to be packaged and verified before publication.**
+The instructions below reflect the current controller. 
 
-1. Put `controller_v3_user_guidance.py` in a project folder.
+1. Put `controller.py` in a project folder.
 2. Install the controller's Python dependencies:
 
    ```bash
@@ -51,7 +51,7 @@ The instructions below reflect the current controller. **The Dockerfile and fina
 
    The controller defaults to model `gpt-6`; optionally set `OPENAI_MODEL` in `.env` to another model supported by your account and the Responses API.  The controller communicates with OpenAI models through the Responses API.
 
-4. Start Docker. Build the project image **after the repository Dockerfile is supplied and verified**:
+4. Start Docker. Build the project image:
 
    ```bash
    docker build -t divvy-analytics:latest .
