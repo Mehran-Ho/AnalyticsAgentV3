@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset='utf-8'><title>Analysis findings</title><style>body{font:16px/1.55 Arial,sans-serif;max-width:1050px;margin:35px auto;padding:0 22px;color:#222}img{max-width:100%;height:auto}h1,h2,h3{margin-top:1.4em}table{border-collapse:collapse;margin:18px 0;width:100%}th,td{border:1px solid #ddd;padding:8px 12px;text-align:left}th{background:#f5f5f5}</style></head><body><h1>Analysis findings</h1><img src="charts/chart.png" alt="Analysis chart"><h2>Key findings</h2>
+<p><strong>Casual riders took slightly longer typical trips than annual members in February 2025, but the difference in average duration was much larger.</strong> The analysis includes all 151,865 prepared trips: 27,746 casual trips and 124,119 member trips. “Member” is interpreted as annual membership.</p>
+<table><thead><tr><th>Trip-duration measure</th><th>Casual riders</th><th>Annual members</th></tr></thead><tbody>
+<tr><td>Median</td><td>7.22 minutes</td><td>6.90 minutes</td></tr>
+<tr><td>Middle 50% of trips</td><td>4.53–12.11 minutes</td><td>4.23–11.51 minutes</td></tr>
+<tr><td>Mean</td><td>14.39 minutes</td><td>9.99 minutes</td></tr>
+<tr><td>90th percentile</td><td>22.04 minutes</td><td>18.57 minutes</td></tr>
+<tr><td>95th percentile</td><td>32.64 minutes</td><td>25.15 minutes</td></tr>
+</tbody></table>
+<p>The casual median was <strong>0.33 minutes longer</strong>, or about <strong>4.7%</strong> above the member median. The similar middle-50% ranges indicate that typical durations were broadly comparable.</p>
+<p>By contrast, the casual mean was <strong>4.40 minutes longer (+44.0%)</strong>. Both groups’ means exceeded their medians, indicating upper-tail influence, with a larger gap among casual trips. The higher casual 90th and 95th percentiles also show longer durations toward the upper end.</p>
+<h2>Influence of very long trips</h2>
+<p>The primary results retain very long recorded trips. An exploratory cutoff excluding 44 casual and 16 member trips above 24 hours left the median gap nearly unchanged: <strong>0.327 to 0.320 minutes</strong>. However, the mean gap fell from <strong>4.399 to 2.231 minutes</strong>. Thus, the typical-duration comparison is relatively insensitive to these trips, while the mean difference is more sensitive. The cutoff is an influence check—not a validated rule for identifying invalid trips—and very long durations may not represent continuous riding.</p>
+<h2>Scope and limitations</h2>
+<p>Preparation excluded only 15 trips that started outside February 2025; no further exclusions were applied to the primary comparison. Results are <strong>trip-weighted, not rider-weighted</strong>, so frequent riders contribute more observations. Rider identifiers were unavailable to account for repeated trips.</p>
+<p>These are descriptive findings without confidence intervals or significance tests. They do not establish that membership causes duration differences or that February represents other months. Trip purpose, route, weather, and rider characteristics are possible explanations, not demonstrated ones. Missing station information also limits station-level explanations.</p>
+<p><strong>Conclusion:</strong> Casual trips were slightly longer at the median and notably longer on average. The larger average gap reflects greater upper-tail influence, rather than a similarly large difference in typical trip duration.</p></body></html>

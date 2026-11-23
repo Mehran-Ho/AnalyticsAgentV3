@@ -1,0 +1,26 @@
+# API keys and environment settings
+.env
+.env.*
+
+# Python temporary files
+__pycache__/
+*.pyc
+.venv/
+
+# Datasets
+data/
+*.csv
+
+# Generated runs and test outputs
+runs/
+runs_v3/
+
+# Archived controller versions
+Archive/
+
+# Local data profiles
+data_profile.json
+data_profile.py
+
+# Temporary files
+*.log
