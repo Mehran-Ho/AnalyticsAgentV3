@@ -2,128 +2,80 @@
 
 ## Introduction
 
-AnalyticsAgentV3 is a prototype AI agent that performs data preparation, statistical analysis, visualization, and interpretation using Python, OpenAI, and Docker.
-
-An AI agent is a program that uses a large language model (LLM), such as OpenAI's GPT, to carry out multi-step tasks. Docker provides an isolated environment for executing code.
-
-The project explored how AI agents could assist analytics professionals while maintaining human oversight. Development involved several iterations, debugging, testing, and independent reviews.
+AnalyticsAgentV3 is a human-supervised prototype for data preparation, statistical analysis, visualization, and interpretation using Python, OpenAI, and Docker. The project explored how an analytics professional can work with an LLM while retaining responsibility for consequential decisions. Development involved multiple architectures, code failures, tests, and independent reviews.
 
 Five lessons emerged.
 
 ## 1. Agent Architecture: Separate Responsibilities
 
-An important distinction is between designing the agent's workflow and using AI to plan analytical work.
-
-The workflow defines what happens, in what order, and what requires approval or verification. The LLM develops analytical plans and generates code within those rules.
-
-The controller is the Python program that manages this workflow. It calls OpenAI, requests human approvals, executes code through Docker, and checks results.
+An important distinction is between designing the agent's workflow and using an LLM to plan analytical work. The workflow defines the sequence of steps and approval points; the LLM proposes plans and generates code within those rules. A Python controller coordinates the work, Docker executes generated code, and the human approves consequential plans.
 
 ### AnalyticsAgentV3: End-to-End Workflow
 
 ![AnalyticsAgentV3 end-to-end workflow](workflow.png)
 
-Our architecture separates five responsibilities:
+The final architecture separates five responsibilities:
 
-- Planning: OpenAI proposes analytical steps in plain language before generating code.
+- **Planning:** OpenAI proposes analytical steps before generating code.
+- **Approval:** The human reviews consequential assumptions and proposed plans.
+- **Execution:** Generated Python code runs in a restricted Docker container.
+- **Verification:** The controller reconciles prepared data with a preparation audit recording input rows, exclusions, output rows, and remaining missing values.
+- **Interpretation:** OpenAI explains saved results and supports follow-up questions.
 
-- Approval: The human reviews consequential analytical choices.
+The approved, question-specific prepared dataset is frozen for analysis and potential follow-ups. Optional charts use saved statistical results rather than performing new statistical analyses. This separation prevents chart generation from introducing unapproved calculations and makes the results easier to trace.
 
-- Execution: Generated Python code runs inside Docker.
+### One LLM or Two?
 
-- Verification: The controller checks that the cleaned dataset is consistent with the preparation audit.
+The earliest architecture used **Gemini to generate analytical plans and Python code**, **Claude to review them independently**, and **ChatGPT to assist the human developer**. After repeated Gemini HTTP 503 (“Service Unavailable”) errors and timeouts, **OpenAI replaced Gemini as generator**, while Claude remained the reviewer. The final runtime architecture uses **OpenAI alone**; Claude remained available for occasional external development review.
 
-- Interpretation: OpenAI explains results and supports follow-up questions.
+Independent review sometimes caught real defects, but it could also produce speculative objections or misjudge their importance. In one case, Claude initially treated a defect capable of producing millions of erroneous audit records as optional. We accepted the loss of a second review perspective in exchange for a simpler operational workflow, recognizing that some errors may still escape detection.
 
-The preparation audit records the number of input rows, excluded rows and reasons for exclusion, output rows, and remaining missing values.
-
-This separation allows some errors to be detected before they affect subsequent analysis, although it cannot guarantee correctness.
-
-## One LLM or Two?
-
-Earlier versions used OpenAI for generation and Claude for independent review. The final runtime architecture uses OpenAI alone, supported by deterministic verification and execution feedback.
-
-A second LLM can identify errors, but adds cost, latency, and complexity. Agreement between models does not guarantee correctness.
-
-Claude remained valuable as an independent reviewer during development.
-
-**Lesson:** Choose the number of LLMs based on demonstrated needs, not the assumption that more models necessarily produce better results.
+**Lesson:** Allocate responsibilities deliberately and choose the number of LLMs based on demonstrated value, not the assumption that more reviews guarantee better results.
 
 ## 2. Human Oversight: Focus on Consequential Decisions
 
-Human oversight is essential, but it should concentrate on decisions requiring analytical judgment.
+The human should evaluate choices that materially affect the analysis, especially exclusions, assumptions, and analytical methods. However, approving a plan does not mean every line of generated code or every statistical conclusion has been independently verified.
 
-In AnalyticsAgentV3, the human reviews proposed plans in plain language and examines preparation audit results. These reviews address assumptions, exclusions, and analytical methods rather than every line of generated Python code.
+For example, Gemini proposed excluding Divvy bicycle rides longer than 24 hours without adequate justification and treated unique ride IDs as proof of statistical independence. It also inserted hard-coded analytical conclusions rather than computing them. These problems emerged through iterative development and testing, with ChatGPT assisting in identifying and assessing defects. A controller safeguard also incorrectly rejected a legitimate pandas `dropna()` operation.
 
-For example, when analyzing the Divvy bike-share data, we questioned a proposed 24-hour trip-duration cutoff because it lacked independent justification. The primary analysis retained valid long trips, while the cutoff became an optional sensitivity analysis.
+For follow-up questions, OpenAI chooses whether to **REUSE** the frozen prepared dataset, **EXTEND** it with further preparation, or **RESTART** from raw data. The human approves any new preparation and statistical plans. The controller currently handles one follow-up question per execution and does not automatically reconsider routing if that question changes after routing.
 
-For follow-up questions, the agent evaluates whether the previously cleaned dataset contains sufficient information. It can:
-
-- Reuse the existing dataset.
-
-- Extend it through additional preparation.
-
-- Restart preparation from the original data.
-
-The saved, unchanged cleaned dataset is called the frozen dataset. Reusing it avoids unnecessary data preparation and maintains consistency across related analyses.
-
-The agent determines whether the frozen dataset can support a follow-up question. The human reviews and approves the proposed analytical plan before execution.
-
-**Lesson:** Human oversight should focus on domain knowledge, assumptions, and analytical judgment rather than routine technical details.
+**Lesson:** Make oversight substantive: inspect consequential assumptions and results rather than treating an approval step as proof of correctness.
 
 ## 3. Execution Controls: Separate Generated Code from the Controller
 
-AI-generated code can contain errors or behave unexpectedly, potentially overwriting files or consuming excessive computing resources.
+AI-generated code can fail or behave unexpectedly. AnalyticsAgentV3 therefore runs generated Python scripts in Docker rather than directly in the controller environment. Network, filesystem, memory, and CPU restrictions reduce some risks but do not guarantee security or correctness.
 
-AnalyticsAgentV3 therefore executes generated Python scripts inside a Docker container rather than directly in the controller's environment.
+The controller saves generated code, preparation audits, statistical results, and charts as evidence for checking outcomes, understanding decisions, and resuming work. Preparation checks reconcile input rows, excluded rows, and prepared rows, along with missing-value summaries; they do **not** independently validate every statistical calculation or detect all hard-coded findings.
 
-Docker restricts network access, filesystem access, memory, and CPU usage. These restrictions reduce certain risks but do not provide a complete security guarantee.
-
-The controller also preserves generated code, preparation audits, statistical results, and charts. These artifacts support verification, reproducibility, and recovery from interrupted or failed runs.
-
-**Lesson:** Execution controls and evidence preservation should be incorporated into an analytics agent from the beginning.
+**Lesson:** Control code execution, preserve evidence, and recognize the limits of verification.
 
 ## 4. Verification and Recovery: Expect Errors
 
-Even plausible AI-generated code can fail during execution.
+In testing, generated code attempted to call pandas `.fillna()` on a NumPy array. Execution failed; the controller saved the error, and after the human resumed the run, the LLM corrected the code. Other tests revealed stale audit files and inconsistent exclusion counts, prompting targeted verification fixes.
 
-During our February 2025 Divvy test, OpenAI generated Python code that attempted to apply .fillna(), a pandas method, to a NumPy array, which does not support that method.
+The prototype also completed analyses of approximately **5.55 million 2025 Divvy rides**, including a seasonal follow-up using **REUSE**. An airline arrival dataset covering **January 1–December 31, 2025** contained **539,747 flights**; excluding **16,312 cancelled** and **1,166 diverted** flights left **522,269**. The initial question compared delays of at least 15 minutes by airline. A follow-up on delays of at least 30 minutes used **EXTEND** to add an indicator and completed statistics, charting, and interpretation without further exclusions. **RESTART has not been tested.**
 
-The run stopped. The controller saved the error message. When the human restarted the controller and resumed the run, OpenAI received the error and generated working replacement code.
-
-Independent testing also identified weaknesses in our recovery mechanism, including a risk that an old audit file could be mistaken for the current one. We corrected these problems.
-
-The controller verifies that the prepared dataset matches its audit in row counts, exclusions, and missing values. However, these checks do not establish that all analytical methods or conclusions are correct.
-
-**Lesson:** Reliability requires detecting errors, preserving evidence, and supporting recovery—not assuming AI-generated code will always work.
+**Lesson:** Test the complete workflow with real datasets, document failures and their corrections, and provide a way to recover from execution errors.
 
 ## 5. Simplicity: Justify Every Additional Control
 
-During development, we repeatedly considered adding safeguards, review stages, and more elaborate workflow logic.
+During development, reviews, approval gates, audit procedures, and recovery logic accumulated. By the third week, the controller had reached **2,737 lines**. Removing the routine second-LLM review and associated state-management complexity helped reduce it to **633 lines**, approximately **77% fewer**. This reduction made the workflow easier to understand.
 
-Each addition might improve reliability but also increases complexity, cost, or maintenance requirements.
+The retained controls address demonstrated needs: Docker isolation, human approval of consequential plans, saved evidence, and targeted deterministic checks. But the system remains a research prototype, not a production-ready analytics service.
 
-We adopted a guiding principle: add a control only when its purpose and value can be justified.
-
-For example, we retained Docker restrictions and preparation verification but removed the second LLM from the runtime workflow.
-
-We also reused the frozen dataset for related follow-up question, avoiding unnecessary repeated data preparation.
-
-**Lesson:** A relatively simple, understandable agent with essential controls may be more useful than a complicated system whose behavior is difficult to explain or maintain.
+**Lesson:** Prefer a simple, understandable architecture, and retain controls whose purposes and benefits justify their costs.
 
 ## Results and Limitations
 
-AnalyticsAgentV3 successfully processed approximately 5.55 million Divvy bike-share trips from 2025, generated statistical results and visualizations, and answered a seasonal follow-up using the frozen dataset. A separate February analysis also completed the full workflow.
-
-These results demonstrate feasibility, not general reliability across different datasets and analytical problems.
-
-Two limitations remain. If a follow-up analysis is interrupted, resuming it may lose some context. When a follow-up requires additional data preparation, its audit may report only the new exclusions rather than the complete preparation history.
-
-Broader testing would be necessary before operational deployment.
+The Divvy and airline runs demonstrate that the prototype can complete selected end-to-end analyses and follow-up workflows. But they do not establish reliability across arbitrary datasets or analytical questions. Some errors still require human intervention; resuming interrupted follow-ups can lose context, and an EXTEND audit may describe new exclusions without the full earlier exclusion history. Broader testing would be needed before deployment.
 
 ## Conclusion
 
-Our central finding is that an effective analytics agent requires more than a capable LLM.
+A useful analytics agent requires more than a capable LLM. Its effectiveness depends on workflow design, analytical judgment, controlled execution, evidence, recovery, and meaningful human oversight. The goal is to assist the analytics professional, not remove human accountability.
 
-Its usefulness depends on workflow design, analytical judgment, controlled execution, verification, recovery, and human oversight.
+*Related experience-based article: “Building a Human-Supervised AI Analytics Agent: Lessons from a Working Prototype” (manuscript prepared for editorial consideration).* 
 
-The objective is not to remove the analytics professional from the process, but to make analytical work more efficient while preserving accountability and understanding.
+## Acknowledgment
+
+ChatGPT (OpenAI) contributed substantially to the controller's design and coding, debugging, architectural revisions, and preparation of this documentation. The human developer directed the project, made the final design decisions, tested the system, and retains responsibility for the work and its conclusions.
