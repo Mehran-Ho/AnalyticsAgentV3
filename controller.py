@@ -6,7 +6,6 @@ Workflow: human input, dataset profiling, scope assessment and approval,
 data preparation, frozen dataset, statistical analysis, optional charts,
 interpretation and reporting, and optional follow-up questions.
 """
-import csv
 import json
 import os
 import subprocess
@@ -38,16 +37,21 @@ def ask_openai(instructions, content):
     return response.output_text
 
 
+def count_csv_rows(source):
+    import pandas as pd
+
+    with pd.read_csv(source, chunksize=100_000) as chunks:
+        return sum(len(chunk) for chunk in chunks)
+
+
 def read_csv_profile(source):
     """Small factual profile; no extra model call."""
     import pandas as pd
 
     sample = pd.read_csv(source, nrows=1000)
-    with source.open(newline="", encoding="utf-8-sig") as f:
-        row_count = sum(1 for _ in csv.reader(f)) - 1
     return {
         "filename": source.name,
-        "rows": row_count,
+        "rows": count_csv_rows(source),
         "columns": list(sample.columns),
         "sample_missing_counts_first_1000_rows": sample.isna().sum().to_dict(),
         "sample_rows": sample.head(3).fillna("").astype(str).to_dict("records"),
@@ -60,8 +64,7 @@ def verify_preparation(source, output_dir):
 
     audit = json.loads((output_dir / "audit_summary.json").read_text(encoding="utf-8"))
     prepared = pd.read_csv(output_dir / "prepared.csv")
-    with source.open(newline="", encoding="utf-8-sig") as f:
-        input_rows = sum(1 for _ in csv.reader(f)) - 1
+    input_rows = count_csv_rows(source)
 
     assert audit["input_row_count"] == input_rows, "Input row count mismatch"
     assert audit["output_row_count"] == len(prepared), "Output row count mismatch"
@@ -156,8 +159,8 @@ def prepare_data(selected_run=None):
             raise ValueError("Research question is required")
         run = RUNS / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         run.mkdir()
-        save(run / "context.json", json.dumps(
-            {"source": str(source), "question": question}, indent=2))
+        context = {"source": str(source), "question": question}
+        save(run / "context.json", json.dumps(context, indent=2))
 
     if not source.is_file():
         raise FileNotFoundError(source)
@@ -214,7 +217,7 @@ def prepare_data(selected_run=None):
             "accepted preparation; avoid redoing established work. Keep the plan "
             "focused on necessary changes. No statistical results or Python code.",
             f"QUESTION:\n{question}\nPROFILE:\n{json.dumps(profile)}\n"
-            f"FOLLOW-UP CONTEXT:\n{json.dumps(context) if selected_run is not None else 'New research question'}",
+            f"FOLLOW-UP CONTEXT:\n{json.dumps(context) if context.get('follow_up_route') else 'New research question'}",
         )
         save(plan_path, plan)
 
@@ -336,6 +339,9 @@ def analyze_data(run):
         while True:
             print("\nPROPOSED STATISTICAL PLAN:\n",
                   plan_path.read_text(encoding="utf-8"))
+            if context.get("parent_run") or context.get("prepared_from") or context.get("follow_up_route"):
+                print("If your revision requires changing the frozen dataset, stop and submit "
+                      "it as a new follow-up question from the parent run.")
             choice = input("Approve (a), revise (r), or stop (s)? ").strip().lower()
             if choice == "s":
                 return False
@@ -377,6 +383,15 @@ def analyze_data(run):
         execute_in_docker(prepared, code_path.resolve(), output_dir.resolve(), "stats_results.json")
     if not results_path.is_file():
         raise FileNotFoundError("Statistical code did not create stats_results.json")
+    try:
+        results = json.loads(results_path.read_text(encoding="utf-8"))
+        if not isinstance(results, dict) or not results:
+            raise ValueError("Expected a non-empty JSON object")
+    except ValueError as exc:
+        results_path.unlink()
+        if computed:
+            code_path.replace(code_path.with_suffix(".failed.py"))
+        raise ValueError(f"Invalid statistical results in {results_path.name}: {exc}") from exc
     print("Stage 2: Statistical results computed and saved." if computed
           else "Stage 2: Reusing saved statistical results.")
     return True
@@ -524,7 +539,21 @@ def interpret_results(run):
         return
     interpretation_path = run / "interpretation.md"
     if not interpretation_path.exists():
-        question = json.loads((run / "context.json").read_text(encoding="utf-8"))["question"]
+        context = json.loads((run / "context.json").read_text(encoding="utf-8"))
+        question = context["question"]
+        prior_context = ""
+        parent_run = context.get("parent_run") or context.get("prepared_from")
+        if parent_run:
+            parent_results = Path(parent_run) / "stats_output" / "stats_results.json"
+            parent_context = Path(parent_run) / "context.json"
+            previous_question = context.get("previous_question")
+            if not previous_question and parent_context.is_file():
+                previous_question = json.loads(parent_context.read_text(encoding="utf-8"))["question"]
+            if previous_question and parent_results.is_file():
+                prior_context = (
+                    f"\nPREVIOUS QUESTION:\n{previous_question}\n"
+                    f"PREVIOUS STATISTICAL RESULTS:\n{parent_results.read_text(encoding='utf-8')}"
+                )
         chart_path = run / "charts" / "chart.png"
         chart_plan_path = run / "charts" / "chart_plan.md"
         chart_context = (
@@ -541,11 +570,14 @@ def interpret_results(run):
             "assumptions, limitations, and implications. Distinguish supported "
             "conclusions from speculation. Do not invent results, perform "
             "additional analysis, or propose new cleaning. "
+            "If prior results are supplied, compare only compatible measures. "
+            "Clearly identify differences in analytical populations and say when "
+            "comparability cannot be established. "
             "Do not claim to have viewed the chart image. End with a short conclusion.",
             f"QUESTION:\n{question}\nSTATISTICAL RESULTS:\n"
             f"{results_path.read_text(encoding='utf-8')}\n"
             f"PREPARATION AUDIT:\n{(run / 'output' / 'audit_summary.json').read_text(encoding='utf-8')}\n"
-            f"CHART CONTEXT:\n{chart_context}",
+            f"CHART CONTEXT:\n{chart_context}{prior_context}",
         )
         save(interpretation_path, interpretation)
         print("Stage 4: Interpretation saved:", interpretation_path)
@@ -597,6 +629,7 @@ def follow_up(run):
         save(new_run / "context.json", json.dumps({
             "source": raw_source, "original_source": raw_source,
             "question": question, "prepared_from": str(run),
+            "parent_run": str(run),
             "preparation_context": plan,
         }, indent=2))
         (new_run / "output").mkdir()
@@ -609,6 +642,7 @@ def follow_up(run):
         save(new_run / "context.json", json.dumps({
             "source": source, "original_source": raw_source,
             "question": question, "follow_up_route": route,
+            "parent_run": str(run),
             "preparation_context": plan,
             "previous_question": context["question"],
         }, indent=2))

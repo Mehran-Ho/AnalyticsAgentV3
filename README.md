@@ -10,10 +10,10 @@ The project is a **working prototype, not a production-ready or fully validated 
 
 1. **Question and data:** The human supplies a research question and CSV file. The controller profiles the dataset and sends a compact profile to OpenAI.  This includes column names, missing-value counts, and three sample rows.
 2. **Scope:** OpenAI assesses the scope of the question; the human accepts, revises, or stops.
-3. **Data preparation:** OpenAI proposes a question-specific data preparation plan for human approval, then generates code.  Docker executes the approved code. The controller checks row counts, exclusions, and remaining missing values against an audit. The human reviews the audit summary and accepts the prepared dataset, which is then frozen for analysis and possible follow-ups.
-4. **Analysis:** OpenAI proposes a statistical plan for human approval, generates code, and the controller runs it in Docker.
-5. **Charts and report:** For optional charts, OpenAI proposes one figure with up to two panels for human approval. Once approved, OpenAI generates code to create charts based on saved statistical results only; the controller executes it in Docker. OpenAI then interprets the results and produces an HTML report.
-6. **Follow-up:** OpenAI chooses whether to **REUSE** the prepared dataset, **EXTEND** it with additional preparation, or **RESTART** from the original data. The human reviews and approves any new preparation or statistical analysis plan before execution. The current controller handles **one follow-up question per execution**. If the question is revised after routing, it **does not automatically reconsider** the original REUSE/EXTEND/RESTART decision.
+3. **Data preparation:** OpenAI proposes a question-specific data preparation plan for human approval, then generates code. Docker executes the approved code. The controller checks row counts, exclusions, and remaining missing values against an audit. Profiling and verification both count input rows with chunked pandas reads that skip blank lines. The human reviews the audit summary and accepts the prepared dataset, which is then frozen for analysis and possible follow-ups.
+4. **Analysis:** OpenAI proposes a statistical plan for human approval, generates code, and the controller runs it in Docker. The controller requires a non-empty JSON object before accepting new or saved statistical results.
+5. **Charts and report:** For optional charts, OpenAI proposes one figure with up to two panels for human approval. Once approved, OpenAI generates code to create charts based on saved statistical results only. The controller executes it in Docker. OpenAI then interprets the results and produces an HTML report. When the parent run’s question and results are available, the same interpretation request supplies them and asks OpenAI to compare only compatible measures and identify differences in analytical populations.
+6. **Follow-up:** OpenAI chooses whether to **REUSE** the prepared dataset, **EXTEND** it with additional preparation, or **RESTART** from the original data. The human reviews and approves any new preparation or statistical analysis plan before execution. An interrupted **EXTEND** run uses the saved preparation context when generating its plan on resume. The controller handles **one follow-up question per execution**. If a statistical-plan revision requires changing the frozen dataset, stop and submit it as a new follow-up question from the parent run.
 
 If execution fails, the controller saves error details. The human can restart the controller and choose to resume. During data preparation, saved verification errors inform corrected code generation; in later stages, error details are not automatically reused.
 
@@ -26,7 +26,7 @@ For the design rationale, experience, and known trade-offs, see [Lessons Learned
 - Python 3 and `pip`
 - [Docker Desktop / Docker Engine](https://docs.docker.com/get-docker/), installed and running
 - An OpenAI API key with access to the configured model
-- Python packages: `openai`, `python-dotenv`
+- Python packages: `openai`, `python-dotenv`, `pandas`
 - The project's Docker image, named **`divvy-analytics:latest`**, containing the Python analysis libraries used by the generated scripts
 - Visual Studio Code (recommended, not required)
 
@@ -73,7 +73,7 @@ Airline: [Bureau of Transportation Statistics — On-Time Performance](https://w
 
 ## Demonstrated results
 
-- **Divvy bicycle-sharing data:** The prototype completed an analysis of approximately **5.55 million rides from 2025**, including a summer-versus-winter follow-up that used **REUSE** without repeating preparation. A separate February 2025 analysis used **151,880 input rides**, **151,865 prepared rides**, and **15 excluded rides**.
+- **Divvy bicycle-sharing data:** The prototype completed an analysis of approximately **5.55 million rides from 2025**, including a summer-versus-winter follow-up that used **REUSE** without repeating preparation. A test on January 2025 data successfully resumed an interrupted **EXTEND** follow-up and compared its results with the previous statistical results. A separate February 2025 analysis used **151,880 input rides**, **151,865 prepared rides**, and **15 excluded rides**.
 - **Airline arrival data:** On a 2025 dataset containing **539,747 flights**, the controller excluded **16,312 cancelled** and **1,166 diverted** flights, leaving **522,269** flights for a comparison of arrivals delayed at least 15 minutes by 15 airlines. A follow-up on delays of at least 30 minutes used **EXTEND** to add a delay indicator, then completed statistics, chart generation, and interpretation without further exclusions.
 - **Error recovery:** A generated-code error involving `.fillna()` on a NumPy array was corrected after a human-resumed run.
 
@@ -82,7 +82,6 @@ These demonstrations establish feasibility, **not** reliability across arbitrary
 ## Known limitations
 
 - Only one follow-up question is handled per execution; changing a question after routing does not automatically trigger a new routing decision.
-- Resuming certain interrupted follow-up analyses may lose some context.
 - After an **EXTEND** follow-up, the audit may show only newly excluded rows rather than the complete exclusion history.
 - Audit reconciliation does not independently validate every statistical method, analytical assumption, or conclusion.
 - The controller currently expects CSV input and the specific Docker image named above; broader portability has not been established.
